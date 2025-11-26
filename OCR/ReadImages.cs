@@ -1,45 +1,43 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Data;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using Tesseract;
 
 namespace Payment_Validator.OCR
 {
     public class ReadImages
     {
-        public static void ValidatePayments(DataTable dt)
+
+        private readonly string tessDataPath;
+
+        public ReadImages(string tessDataFolderPath)
         {
-            int slipColIndex = 0;
-            for (int i = 0; i < dt.Columns.Count; i++)
+            tessDataPath = tessDataFolderPath;
+        }
+
+        public string ExtractTextFromImage(Image img)
+        {
+            try
             {
-                if (dt.Columns[i].ColumnName.Trim().Equals("Slip"))
+                using (Bitmap bitmap = new Bitmap(img))
+                using (var engine = new TesseractEngine(tessDataPath, "eng", EngineMode.Default))
+                using (var pix = Pix.LoadFromMemory(ImageToByteArray(bitmap)))
+                using (var page = engine.Process(pix))
                 {
-                    slipColIndex = i;
-                    break;
+                    return page.GetText();
                 }
             }
-
-            if (slipColIndex == -1)
+            catch (Exception ex)
             {
-                MessageBox.Show("Slip column not found in the data.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
+                return $"[OCR ERROR] {ex.Message}";
             }
-
-            DataRow row = dt.Rows[0];
-            string link = row[slipColIndex]?.ToString() ?? $"No link found";
-
-            MessageBox.Show($"Link from 'Slip' : {link}", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-            return;
         }
 
-        private void GetImageFromDrive(string link)
+        private static byte[] ImageToByteArray(Image image)
         {
-            
+            using (var ms = new System.IO.MemoryStream())
+            {
+                image.Save(ms, image.RawFormat);
+                return ms.ToArray();
+            }
         }
-    }
 
-    
+    }
 }

@@ -95,14 +95,70 @@ namespace Payment_Validator
 
         private void btnValidate_Click(object sender, EventArgs e)
         {   
-            DataTable dt = (DataTable)dataView.DataSource;
-            if (dt == null || dt.Rows.Count == 0)
+            try 
             {
-                MessageBox.Show("No data to validate");
+                DataTable dt = (DataTable)dataView.DataSource;
+                if (dt == null || dt.Rows.Count == 0)
+                {
+                    MessageBox.Show("No data to validate");
+                    return;
+                }
+                
+                ValidatePayments(dt);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error: {ex.Message}");
+            }
+            
+        }
+
+        private async void ValidatePayments(DataTable dt)
+        {
+            int slipColIndex = -1;
+            for (int i = 0; i < dt.Columns.Count; i++)
+            {
+                if (dt.Columns[i].ColumnName.Trim().Equals("Slip"))
+                {
+                    slipColIndex = i;
+                    break;
+                }
+            }
+
+            if (slipColIndex == -1)
+            {
+                MessageBox.Show("Slip column not found in the data.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
-            var readImages = new ReadImages();
-            readImages.ValidatePayments(dt);
+
+            DataRow row = dt.Rows[0];
+            string link = row[slipColIndex]?.ToString() ?? $"No link found";
+
+            MessageBox.Show($"Link from 'Slip' : {link}", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+            if (string.IsNullOrWhiteSpace(link))
+            {
+                MessageBox.Show("No valid link found in the Slip column.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            GetImage getImage = new GetImage();
+            Image? img = await getImage.GetImageFromDrive(link);
+
+            if (img == null)
+            {
+                MessageBox.Show("Failed to download image from Google Drive. Please check the link and try again.",
+                    "Download Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            ReadImages readImages = new ReadImages(@"tessdata");
+            string text = readImages.ExtractTextFromImage(img);
+            img.Dispose();
+
+
+
+            return;
         }
     }
 }
