@@ -6,9 +6,15 @@ namespace Payment_Validator
 {
     public partial class mainForm : Form
     {
+
+        GetImage getImage = new GetImage();
+        ReadImages readImages = new ReadImages(@"tessdata");
+        ExtractSlipInfo extractSlipInfo = new ExtractSlipInfo();
+        
         public mainForm()
         {
             InitializeComponent();
+            ExcelPackage.License.SetNonCommercialPersonal("Hansana"); // non commercial license
         }
 
         private void dataGridView1_CellContentClick(object sender, DataGridViewCellEventArgs e)
@@ -44,7 +50,7 @@ namespace Payment_Validator
 
         private DataTable ReadExcel(string filePath)
         {
-            ExcelPackage.License.SetNonCommercialPersonal("Hansana"); // non commercial license
+            
             DataTable dt = new DataTable();
 
             using (var package = new ExcelPackage(new FileInfo(filePath)))
@@ -91,6 +97,12 @@ namespace Payment_Validator
         {
             dataView.DataSource = dt;
 
+            // Set minimum width for all columns
+            foreach (DataGridViewColumn column in dataView.Columns)
+            {
+                column.MinimumWidth = 100;
+                column.AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells;
+            }
         }
 
         private void btnValidate_Click(object sender, EventArgs e)
@@ -115,10 +127,11 @@ namespace Payment_Validator
 
         private async void ValidatePayments(DataTable dt)
         {
+            // Find the Slip column index
             int slipColIndex = -1;
             for (int i = 0; i < dt.Columns.Count; i++)
             {
-                if (dt.Columns[i].ColumnName.Trim().Equals("Slip"))
+                if (dt.Columns[i].ColumnName.Trim().Equals("Slip", StringComparison.OrdinalIgnoreCase))
                 {
                     slipColIndex = i;
                     break;
@@ -131,34 +144,191 @@ namespace Payment_Validator
                 return;
             }
 
-            DataRow row = dt.Rows[0];
-            string link = row[slipColIndex]?.ToString() ?? $"No link found";
-
-            MessageBox.Show($"Link from 'Slip' : {link}", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-            if (string.IsNullOrWhiteSpace(link))
+            // Add Validation Status column if it doesn't exist
+            if (!dt.Columns.Contains("Validation Status"))
             {
-                MessageBox.Show("No valid link found in the Slip column.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
+                dt.Columns.Add("Validation Status", typeof(string));
+                
+                // Set minimum width for the new column
+                int colIndex = dt.Columns["Validation Status"]!.Ordinal;
+                if (dataView.Columns.Count > colIndex)
+                {
+                    dataView.Columns[colIndex].MinimumWidth = 150;
+                    dataView.Columns[colIndex].AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells;
+                }
             }
 
-            GetImage getImage = new GetImage();
-            Image? img = await getImage.GetImageFromDrive(link);
+            int validationColIndex = dt.Columns["Validation Status"]!.Ordinal;
 
-            if (img == null)
+            // Disable UI during validation
+            btnValidate.Enabled = false;
+            btnUpload.Enabled = false;
+            btnValidate.Text = "Processing...";
+
+            int validCount = 0;
+            int invalidCount = 0;
+
+            // Iterate through all rows
+            for (int rowIndex = 0; rowIndex < dt.Rows.Count; rowIndex++)
             {
-                MessageBox.Show("Failed to download image from Google Drive. Please check the link and try again.",
-                    "Download Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
+                DataRow row = dt.Rows[rowIndex];
+                
+                try
+                {
+                    // Get the slip link
+                    string link = row[slipColIndex]?.ToString()?.Trim() ?? string.Empty;
+
+                    if (string.IsNullOrWhiteSpace(link))
+                    {
+                        row[validationColIndex] = "Error: No slip link provided";
+                        invalidCount++;
+                        continue;
+                    }
+
+                    // Download image from Google Drive
+                    Image? img = await getImage.GetImageFromDrive(link);
+
+                    if (img == null)
+                    {
+                        row[validationColIndex] = "Error: Failed to download image";
+                        invalidCount++;
+                        continue;
+                    }
+
+                    // Extract text using OCR
+                    string text = readImages.ExtractTextFromImage(img);
+                    img.Dispose();
+
+                    // Check if OCR extraction failed
+                    if (text.StartsWith("[OCR ERROR]"))
+                    {
+                        row[validationColIndex] = $"Error: {text}";
+                        invalidCount++;
+                        continue;
+                    }
+
+                    // Extract slip information
+                    ExtractSlipInfo.SlipInfo slipInfo = extractSlipInfo.ExtractInfo(text);
+
+                    // Validate extracted data against row data
+                    bool isValid = ValidateSlipData(row, slipInfo, dt.Columns);
+
+                    if (isValid)
+                    {
+                        row[validationColIndex] = "Valid";
+                        validCount++;
+                    }
+                    else
+                    {
+                        row[validationColIndex] = "Invalid: Data mismatch";
+                        invalidCount++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    row[validationColIndex] = $"Error: {ex.Message}";
+                    invalidCount++;
+                }
+
+                // Refresh the DataGridView to show progress
+                dataView.Refresh();
             }
 
-            ReadImages readImages = new ReadImages(@"tessdata");
-            string text = readImages.ExtractTextFromImage(img);
-            img.Dispose();
+            // Re-enable UI
+            btnValidate.Enabled = true;
+            btnUpload.Enabled = true;
+            btnValidate.Text = "Validate Payments";
 
+            // Show summary
+            MessageBox.Show($"Validation Complete!\n\nValid: {validCount}\nInvalid/Error: {invalidCount}",
+                "Validation Summary", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
 
+        private bool ValidateSlipData(DataRow row, ExtractSlipInfo.SlipInfo slipInfo, DataColumnCollection columns)
+        {
+            bool isValid = true;
 
-            return;
+            // Check NIC if column exists
+            if (columns.Contains("NIC"))
+            {
+                string rowNIC = row["NIC"]?.ToString()?.Trim() ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(rowNIC) && !string.IsNullOrWhiteSpace(slipInfo.NIC))
+                {
+                    if (!rowNIC.Equals(slipInfo.NIC, StringComparison.OrdinalIgnoreCase))
+                    {
+                        isValid = false;
+                    }
+                }
+            }
+
+            // Check Full Name if column exists
+            if (columns.Contains("Name") || columns.Contains("Full Name") || columns.Contains("FullName"))
+            {
+                string colName = columns.Contains("Name") ? "Name" : 
+                                 columns.Contains("Full Name") ? "Full Name" : "FullName";
+                string rowName = row[colName]?.ToString()?.Trim() ?? string.Empty;
+                
+                if (!string.IsNullOrWhiteSpace(rowName) && !string.IsNullOrWhiteSpace(slipInfo.FullName))
+                {
+                    // Partial match for names (case-insensitive)
+                    if (!rowName.Contains(slipInfo.FullName, StringComparison.OrdinalIgnoreCase) &&
+                        !slipInfo.FullName.Contains(rowName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        isValid = false;
+                    }
+                }
+            }
+
+            // Check Deposit Reference if column exists
+            if (columns.Contains("Reference") || columns.Contains("Deposit Reference") || columns.Contains("Ref"))
+            {
+                string colName = columns.Contains("Reference") ? "Reference" :
+                                 columns.Contains("Deposit Reference") ? "Deposit Reference" : "Ref";
+                string rowRef = row[colName]?.ToString()?.Trim() ?? string.Empty;
+                
+                if (!string.IsNullOrWhiteSpace(rowRef) && !string.IsNullOrWhiteSpace(slipInfo.DepositReference))
+                {
+                    if (!rowRef.Equals(slipInfo.DepositReference, StringComparison.OrdinalIgnoreCase))
+                    {
+                        isValid = false;
+                    }
+                }
+            }
+
+            // Check Bank Branch if column exists
+            if (columns.Contains("Branch") || columns.Contains("Bank Branch"))
+            {
+                string colName = columns.Contains("Branch") ? "Branch" : "Bank Branch";
+                string rowBranch = row[colName]?.ToString()?.Trim() ?? string.Empty;
+                
+                if (!string.IsNullOrWhiteSpace(rowBranch) && !string.IsNullOrWhiteSpace(slipInfo.BankBranch))
+                {
+                    if (!rowBranch.Contains(slipInfo.BankBranch, StringComparison.OrdinalIgnoreCase) &&
+                        !slipInfo.BankBranch.Contains(rowBranch, StringComparison.OrdinalIgnoreCase))
+                    {
+                        isValid = false;
+                    }
+                }
+            }
+
+            // Check Timestamp if column exists
+            if (columns.Contains("Date") || columns.Contains("Timestamp") || columns.Contains("DateTime"))
+            {
+                string colName = columns.Contains("Date") ? "Date" :
+                                 columns.Contains("Timestamp") ? "Timestamp" : "DateTime";
+                string rowDate = row[colName]?.ToString()?.Trim() ?? string.Empty;
+                
+                if (!string.IsNullOrWhiteSpace(rowDate) && !string.IsNullOrWhiteSpace(slipInfo.Timestamp))
+                {
+                    // Basic date comparison (can be enhanced)
+                    if (!slipInfo.Timestamp.Contains(rowDate) && !rowDate.Contains(slipInfo.Timestamp))
+                    {
+                        isValid = false;
+                    }
+                }
+            }
+
+            return isValid;
         }
     }
 }

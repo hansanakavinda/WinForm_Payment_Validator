@@ -17,15 +17,8 @@
                     return Image.FromStream(ms);
                 }
             }
-            catch (HttpRequestException ex)
+            catch (Exception)
             {
-                MessageBox.Show($"Failed to download the image. Please check your internet connection and ensure the link is accessible. {ex.Message}",
-                    "Download Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return null;
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error: {ex.Message}");
                 return null;
             }
         }
