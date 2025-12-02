@@ -10,7 +10,8 @@ namespace Payment_Validator
         GetImage getImage = new GetImage();
         ReadImages readImages = new ReadImages(@"tessdata");
         ExtractSlipInfo extractSlipInfo = new ExtractSlipInfo();
-        
+        LoadData loadData = new LoadData(); 
+
         public mainForm()
         {
             InitializeComponent();
@@ -35,8 +36,7 @@ namespace Payment_Validator
                 try
                 {
                     DataTable dt = new DataTable();
-                    dt = ReadExcel(filePath);
-
+                    dt = loadData.ReadExcel(filePath);
                     DisplayData(dt);
 
                 }
@@ -47,50 +47,6 @@ namespace Payment_Validator
             }
 
         }
-
-        private DataTable ReadExcel(string filePath)
-        {
-            
-            DataTable dt = new DataTable();
-
-            using (var package = new ExcelPackage(new FileInfo(filePath)))
-            {
-                ExcelWorksheet ws = package.Workbook.Worksheets[0]; // first worksheet
-
-                int rowCount = ws.Dimension.Rows;
-                int colCount = 0;
-                for (int col = 1; col <= ws.Dimension.Columns; col++)
-                {
-                    if (ws.Cells[1, col].Value != null &&
-                        !string.IsNullOrWhiteSpace(ws.Cells[1, col].Value.ToString()))
-                    {
-                        colCount = col;
-                    }
-                }
-
-                // add headers to datatable
-                for (int col = 1; col <= colCount; col++)
-                {
-                    string colName = ws.Cells[1, col].Value?.ToString() ?? $"Column{col}";
-                    dt.Columns.Add(colName);
-
-                }
-
-                // add data to rows
-                for (int row = 2; row <= rowCount; row++)
-                {
-                    DataRow dr = dt.NewRow();
-                    for (int col = 1; col <= colCount; col++)
-                    {
-                        dr[col - 1] = ws.Cells[row, col].Value?.ToString() ?? string.Empty;
-                    }
-                    dt.Rows.Add(dr);
-                }
-
-            }
-            return dt;
-        }
-
         private void DisplayData(DataTable dt)
         {
             dataView.DataSource = dt;
@@ -306,7 +262,7 @@ namespace Payment_Validator
                     }
                 }
             }
-            MessageBox.Show($"NIC Valid: {nicValid}, Date Valid: {dateValid}");
+            //MessageBox.Show($"NIC Valid: {nicValid}, Date Valid: {dateValid}");
 
             return nicValid && dateValid;
         }

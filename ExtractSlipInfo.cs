@@ -17,7 +17,7 @@ namespace Payment_Validator
 
             // Normalize the text
             string text = ocrText.Replace("\n", " ").Replace("\r", " ").Trim();
-            
+
             // 1. Extract NIC (Sri Lankan NIC old or new format)
             var nicMatch = Regex.Match(text, @"\b\d{12}\b|\b\d{9}[VvXx]\b");
             info.NIC = nicMatch.Success ? nicMatch.Value : null;
@@ -46,6 +46,7 @@ namespace Payment_Validator
                 info.Timestamp = null;
             }
 
+            MessageBox.Show($"text: {text}\n\n, Extracted NIC: {info.NIC}, Timestamp: {info.Timestamp}");
             return info;
         }
 
