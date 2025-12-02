@@ -22,6 +22,7 @@ namespace Payment_Validator.OCR
                 using (var page = engine.Process(pix))
                 {
                     return page.GetText();
+
                 }
             }
             catch (Exception ex)
@@ -34,7 +35,8 @@ namespace Payment_Validator.OCR
         {
             using (var ms = new System.IO.MemoryStream())
             {
-                image.Save(ms, image.RawFormat);
+                // Use Jpeg format explicitly for JPG images
+                image.Save(ms, System.Drawing.Imaging.ImageFormat.Jpeg);
                 return ms.ToArray();
             }
         }

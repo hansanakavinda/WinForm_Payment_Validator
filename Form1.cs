@@ -68,8 +68,6 @@ namespace Payment_Validator
                     }
                 }
 
-                MessageBox.Show($"Number of columns: {colCount}");
-
                 // add headers to datatable
                 for (int col = 1; col <= colCount; col++)
                 {
@@ -102,6 +100,33 @@ namespace Payment_Validator
             {
                 column.MinimumWidth = 100;
                 column.AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells;
+            }
+
+            // Format the 2nd column (index 1) as date if it exists
+            if (dataView.Columns.Count >= 2)
+            {
+                dataView.Columns[1].DefaultCellStyle.Format = "d/MM/yyyy";
+                
+                // If values are still showing as numbers, convert them
+                foreach (DataGridViewRow row in dataView.Rows)
+                {
+                    if (row.Cells[1].Value != null)
+                    {
+                        string cellValue = row.Cells[1].Value.ToString();
+                        if (double.TryParse(cellValue, out double numericValue))
+                        {
+                            try
+                            {
+                                DateTime date = DateTime.FromOADate(numericValue);
+                                row.Cells[1].Value = date.ToString("MM/dd/yyyy");
+                            }
+                            catch
+                            {
+                                // Keep original value if conversion fails
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -197,12 +222,14 @@ namespace Payment_Validator
 
                     // Extract text using OCR
                     string text = readImages.ExtractTextFromImage(img);
+                    
                     img.Dispose();
 
                     // Check if OCR extraction failed
                     if (text.StartsWith("[OCR ERROR]"))
                     {
                         row[validationColIndex] = $"Error: {text}";
+                        MessageBox.Show($"{text}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         invalidCount++;
                         continue;
                     }
@@ -246,67 +273,19 @@ namespace Payment_Validator
 
         private bool ValidateSlipData(DataRow row, ExtractSlipInfo.SlipInfo slipInfo, DataColumnCollection columns)
         {
-            bool isValid = true;
+            
+            bool nicValid = false;
+            bool dateValid = false;
 
             // Check NIC if column exists
-            if (columns.Contains("NIC"))
+            if (columns.Contains("National Identity Card No"))
             {
-                string rowNIC = row["NIC"]?.ToString()?.Trim() ?? string.Empty;
+                string rowNIC = row["National Identity Card No"]?.ToString()?.Trim() ?? string.Empty;
                 if (!string.IsNullOrWhiteSpace(rowNIC) && !string.IsNullOrWhiteSpace(slipInfo.NIC))
                 {
-                    if (!rowNIC.Equals(slipInfo.NIC, StringComparison.OrdinalIgnoreCase))
+                    if (rowNIC.Equals(slipInfo.NIC, StringComparison.OrdinalIgnoreCase))
                     {
-                        isValid = false;
-                    }
-                }
-            }
-
-            // Check Full Name if column exists
-            if (columns.Contains("Name") || columns.Contains("Full Name") || columns.Contains("FullName"))
-            {
-                string colName = columns.Contains("Name") ? "Name" : 
-                                 columns.Contains("Full Name") ? "Full Name" : "FullName";
-                string rowName = row[colName]?.ToString()?.Trim() ?? string.Empty;
-                
-                if (!string.IsNullOrWhiteSpace(rowName) && !string.IsNullOrWhiteSpace(slipInfo.FullName))
-                {
-                    // Partial match for names (case-insensitive)
-                    if (!rowName.Contains(slipInfo.FullName, StringComparison.OrdinalIgnoreCase) &&
-                        !slipInfo.FullName.Contains(rowName, StringComparison.OrdinalIgnoreCase))
-                    {
-                        isValid = false;
-                    }
-                }
-            }
-
-            // Check Deposit Reference if column exists
-            if (columns.Contains("Reference") || columns.Contains("Deposit Reference") || columns.Contains("Ref"))
-            {
-                string colName = columns.Contains("Reference") ? "Reference" :
-                                 columns.Contains("Deposit Reference") ? "Deposit Reference" : "Ref";
-                string rowRef = row[colName]?.ToString()?.Trim() ?? string.Empty;
-                
-                if (!string.IsNullOrWhiteSpace(rowRef) && !string.IsNullOrWhiteSpace(slipInfo.DepositReference))
-                {
-                    if (!rowRef.Equals(slipInfo.DepositReference, StringComparison.OrdinalIgnoreCase))
-                    {
-                        isValid = false;
-                    }
-                }
-            }
-
-            // Check Bank Branch if column exists
-            if (columns.Contains("Branch") || columns.Contains("Bank Branch"))
-            {
-                string colName = columns.Contains("Branch") ? "Branch" : "Bank Branch";
-                string rowBranch = row[colName]?.ToString()?.Trim() ?? string.Empty;
-                
-                if (!string.IsNullOrWhiteSpace(rowBranch) && !string.IsNullOrWhiteSpace(slipInfo.BankBranch))
-                {
-                    if (!rowBranch.Contains(slipInfo.BankBranch, StringComparison.OrdinalIgnoreCase) &&
-                        !slipInfo.BankBranch.Contains(rowBranch, StringComparison.OrdinalIgnoreCase))
-                    {
-                        isValid = false;
+                        nicValid = true;
                     }
                 }
             }
@@ -321,14 +300,15 @@ namespace Payment_Validator
                 if (!string.IsNullOrWhiteSpace(rowDate) && !string.IsNullOrWhiteSpace(slipInfo.Timestamp))
                 {
                     // Basic date comparison (can be enhanced)
-                    if (!slipInfo.Timestamp.Contains(rowDate) && !rowDate.Contains(slipInfo.Timestamp))
+                    if (slipInfo.Timestamp.Contains(rowDate) || rowDate.Contains(slipInfo.Timestamp))
                     {
-                        isValid = false;
+                        dateValid = true;
                     }
                 }
             }
+            MessageBox.Show($"NIC Valid: {nicValid}, Date Valid: {dateValid}");
 
-            return isValid;
+            return nicValid && dateValid;
         }
     }
 }
